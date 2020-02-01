@@ -7,6 +7,7 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -27,6 +28,7 @@ public class MainConversation extends AppCompatActivity {
     private BluetoothSocket bSocket = null;
     private Thread recordingThread = null;
     private Thread playThread = null;
+    private boolean terminatePlayThread = false;
     private AudioRecord recorder = null;
     private AudioTrack track = null;
     private AudioManager am = null;
@@ -37,6 +39,16 @@ public class MainConversation extends AppCompatActivity {
     int minSize = AudioTrack.getMinBufferSize(16000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
     private int bufferSize = minSize;
     private boolean isRecording = false;
+    private boolean keepPlaying = false;
+    private boolean isUseEchoCanceller = false;
+
+    public void setKeepPlaying(boolean value) {
+        keepPlaying = value;
+    }
+
+    public void setIsUseEchoCanceller(boolean value) {
+        isUseEchoCanceller = value;
+    }
 
     // Based on previous project and
     // http://stackoverflow.com/questions/8499042/android-audiorecord-example
@@ -102,6 +114,12 @@ public class MainConversation extends AppCompatActivity {
         recorder = new AudioRecord(MediaRecorder.AudioSource.MIC, 16000,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                 bufferSize);
+
+        if (isUseEchoCanceller) {
+            if(AcousticEchoCanceler.isAvailable()){
+                AcousticEchoCanceler.create(recorder.getAudioSessionId());
+            }
+        }
     }
 
     // Playback received audio
@@ -112,6 +130,7 @@ public class MainConversation extends AppCompatActivity {
 
         track.play();
         // Receive and play audio
+        terminatePlayThread = false;
         playThread = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -124,8 +143,12 @@ public class MainConversation extends AppCompatActivity {
     // Receive audio and write into audio track object for playback
     public void receiveRecording() {
         int i = 0;
-        while (!isRecording) {
+        while (!isRecording || keepPlaying) {
             try {
+                if (terminatePlayThread) {
+                    break;
+                }
+
                 if (inStream.available() == 0) {
                     //Do nothing
                 } else {
@@ -134,6 +157,7 @@ public class MainConversation extends AppCompatActivity {
                 }
             } catch (IOException e) {
                 Log.d("AUDIO", "Error when receiving recording");
+                break;
             }
         }
     }
@@ -148,8 +172,22 @@ public class MainConversation extends AppCompatActivity {
 
     public void destroyProcesses() {
         //Release resources for audio objects
-        track.release();
-        recorder.release();
+        try {
+            if (playThread != null) {
+                terminatePlayThread = true;
+                inStream.close();
+                playThread.join();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        if (track != null) {
+            track.release();
+        }
+        if (recorder != null) {
+            recorder.release();
+        }
     }
 
     // Setter for socket object

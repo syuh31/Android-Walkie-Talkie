@@ -1,14 +1,14 @@
 package com.example.nam_o.walkietalkie;
 
 import android.Manifest;
-import android.app.Application;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
-import android.content.Context;
 import android.content.pm.PackageManager;
+import android.media.audiofx.AcousticEchoCanceler;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -16,11 +16,12 @@ import android.view.MotionEvent;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.content.Intent;
 import android.view.View.OnClickListener;
 import android.view.View;
+import android.widget.CompoundButton;
 import android.widget.ListView;
 import android.widget.Toast;
+import android.widget.ToggleButton;
 
 import java.util.ArrayList;
 import java.util.Set;
@@ -41,6 +42,8 @@ public class UserSelection extends AppCompatActivity {
     private Button connect;
     private Button disconnect;
     private ListView listView;
+    private ToggleButton simultaneousTglBtn;
+    private ToggleButton echoCancellerTglBtn;
 
     //Bluetooth parameters
     private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb");
@@ -76,6 +79,8 @@ public class UserSelection extends AppCompatActivity {
         listen = (Button) findViewById(R.id.listen);
         disconnect = (Button) findViewById(R.id.disconnect);
         audio = (CircleButton) findViewById(R.id.audioBtn);
+        simultaneousTglBtn = (ToggleButton) findViewById(R.id.simultaneousTglBtn);
+        echoCancellerTglBtn = (ToggleButton) findViewById(R.id.echoCancellerTglBtn);
 
         listenThread = new ListenThread();
         connectThread = new ConnectThread();
@@ -91,13 +96,16 @@ public class UserSelection extends AppCompatActivity {
                 int action = event.getAction();
                 if (action == MotionEvent.ACTION_DOWN ) {
 
-                    audioClient.stopPlaying();
+                    if (!simultaneousTglBtn.isChecked()) {
+                        audioClient.stopPlaying();
+                    }
                     audioClient.startRecording();
 
                 } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL ) {
-
                     audioClient.stopRecording();
-                    audioClient.startPlaying();
+                    if (!simultaneousTglBtn.isChecked()) {
+                        audioClient.startPlaying();
+                    }
                 }
                 return false;
             }
@@ -178,35 +186,7 @@ public class UserSelection extends AppCompatActivity {
 
             @Override
             public void onClick(View arg0) {
-
-                boolean disconnectListen = false;
-                boolean disconnectConnect = false;
-                // Enable buttons and disable listView
-                listen.setEnabled(true);
-                connect.setEnabled(true);
-                listView.setVisibility(ListView.GONE);
-                // Close the bluetooth socket
-                if (listenAttempt) {
-                    disconnectListen = listenThread.closeConnect();
-                    listenAttempt = false;
-                }
-                if (connectAttempt) {
-                    disconnectConnect = connectThread.closeConnect();
-                    connectAttempt = false;
-                }
-
-                audioClient.destroyProcesses();
-
-                Log.d("BLUETOOTH", "Disconnect");
-
-                if (disconnectListen || disconnectConnect) {
-                    // Disconnect successful - Handle UI element change
-                    audio.setVisibility(audio.GONE);
-                    listen.setEnabled(true);
-                    connect.setEnabled(true);
-                } else {
-                    // Unsuccessful disconnect - Do nothing
-                }
+                disconnect();
             }
         });
 
@@ -248,6 +228,59 @@ public class UserSelection extends AppCompatActivity {
                 }
             }
         });
+
+        simultaneousTglBtn.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                audioClient.setKeepPlaying(b);
+            }
+        });
+
+        echoCancellerTglBtn.setEnabled(AcousticEchoCanceler.isAvailable());
+        echoCancellerTglBtn.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                audioClient.setIsUseEchoCanceller(b);
+                disconnect();
+                new AlertDialog.Builder(UserSelection.this)
+                        .setTitle("disconnect")
+                        .setMessage("You have to connect again.")
+                        .setPositiveButton("OK", null)
+                        .show();
+            }
+        });
+    }
+
+    void disconnect(){
+
+        boolean disconnectListen = false;
+        boolean disconnectConnect = false;
+        // Enable buttons and disable listView
+        listen.setEnabled(true);
+        connect.setEnabled(true);
+        listView.setVisibility(ListView.GONE);
+        // Close the bluetooth socket
+        if (listenAttempt) {
+            disconnectListen = listenThread.closeConnect();
+            listenAttempt = false;
+        }
+        if (connectAttempt) {
+            disconnectConnect = connectThread.closeConnect();
+            connectAttempt = false;
+        }
+
+        audioClient.destroyProcesses();
+
+        Log.d("BLUETOOTH", "Disconnect");
+
+        if (disconnectListen || disconnectConnect) {
+            // Disconnect successful - Handle UI element change
+            audio.setVisibility(audio.GONE);
+            listen.setEnabled(true);
+            connect.setEnabled(true);
+        } else {
+            // Unsuccessful disconnect - Do nothing
+        }
     }
 
     @Override
